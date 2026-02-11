@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import type { OrderEvent, StreamEvent, SystemEvent } from "@/lib/events";
+import type { StreamEvent, SystemEvent } from "@/lib/events";
 import { createSeedEvents } from "@/lib/stream/sampleData";
 
 export type ConnectionStatus =
@@ -246,83 +246,87 @@ const reduceEventBatch = (
     eventLog.unshift(event);
     if (eventLog.length > 100) eventLog.pop();
 
-    if (event.type.startsWith("stream_")) {
+    if (
+      event.type === "stream_connected" ||
+      event.type === "stream_disconnected" ||
+      event.type === "stream_reconnecting" ||
+      event.type === "stream_reconnected"
+    ) {
       connection = updateConnection(connection, event);
       return;
     }
 
-    const orderEvent = event as OrderEvent;
-    if (orderEvent.type === "order_created") {
-      const existing = orders.find((item) => item.orderId === orderEvent.orderId);
+    if (event.type === "order_created") {
+      const existing = orders.find((item) => item.orderId === event.orderId);
       if (!existing) {
         orders.unshift({
-          orderId: orderEvent.orderId,
-          customerId: orderEvent.customerId,
-          country: orderEvent.country,
-          category: orderEvent.category,
-          amount: orderEvent.amount,
-          currency: orderEvent.currency,
+          orderId: event.orderId,
+          customerId: event.customerId,
+          country: event.country,
+          category: event.category,
+          amount: event.amount,
+          currency: event.currency,
           status: "created",
-          createdAt: orderEvent.createdAt,
-          updatedAt: orderEvent.createdAt,
+          createdAt: event.createdAt,
+          updatedAt: event.createdAt,
         });
       }
       createdWindow.push({
-        at: orderEvent.createdAt,
-        amount: orderEvent.amount,
-        orderId: orderEvent.orderId,
+        at: event.createdAt,
+        amount: event.amount,
+        orderId: event.orderId,
       });
     }
 
-    if (orderEvent.type === "payment_authorized") {
-      if (!orders.some((item) => item.orderId === orderEvent.orderId)) {
+    if (event.type === "payment_authorized") {
+      if (!orders.some((item) => item.orderId === event.orderId)) {
         orders.unshift({
-          orderId: orderEvent.orderId,
+          orderId: event.orderId,
           customerId: "cus_unknown",
           country: "Unknown",
           category: "Unknown",
           amount: 0,
           currency: "USD",
           status: "created",
-          createdAt: orderEvent.authorizedAt,
-          updatedAt: orderEvent.authorizedAt,
+          createdAt: event.authorizedAt,
+          updatedAt: event.authorizedAt,
         });
       }
       orders = orders.map((order) =>
-        order.orderId === orderEvent.orderId
-          ? { ...order, status: "authorized", updatedAt: orderEvent.authorizedAt }
+        order.orderId === event.orderId
+          ? { ...order, status: "authorized", updatedAt: event.authorizedAt }
           : order,
       );
       outcomeWindow.push({
-        at: orderEvent.authorizedAt,
+        at: event.authorizedAt,
         ok: true,
-        orderId: orderEvent.orderId,
+        orderId: event.orderId,
       });
     }
 
-    if (orderEvent.type === "payment_failed") {
-      if (!orders.some((item) => item.orderId === orderEvent.orderId)) {
+    if (event.type === "payment_failed") {
+      if (!orders.some((item) => item.orderId === event.orderId)) {
         orders.unshift({
-          orderId: orderEvent.orderId,
+          orderId: event.orderId,
           customerId: "cus_unknown",
           country: "Unknown",
           category: "Unknown",
           amount: 0,
           currency: "USD",
           status: "created",
-          createdAt: orderEvent.failedAt,
-          updatedAt: orderEvent.failedAt,
+          createdAt: event.failedAt,
+          updatedAt: event.failedAt,
         });
       }
       orders = orders.map((order) =>
-        order.orderId === orderEvent.orderId
-          ? { ...order, status: "failed", updatedAt: orderEvent.failedAt }
+        order.orderId === event.orderId
+          ? { ...order, status: "failed", updatedAt: event.failedAt }
           : order,
       );
       outcomeWindow.push({
-        at: orderEvent.failedAt,
+        at: event.failedAt,
         ok: false,
-        orderId: orderEvent.orderId,
+        orderId: event.orderId,
       });
     }
   });

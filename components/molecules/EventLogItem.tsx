@@ -32,7 +32,7 @@ const getEventMeta = (event: StreamEvent) => {
   if (event.type === "stream_reconnected") {
     return "Stream reconnected";
   }
-  return event.type;
+  return "Unknown event";
 };
 
 const badgeVariant = (event: StreamEvent) => {
