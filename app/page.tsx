@@ -2,21 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Activity,
   BadgeDollarSign,
   Boxes,
-  ChartNoAxesCombined,
   CreditCard,
   LayoutDashboard,
-  LogOut,
   Map,
   Package,
   Search,
   Settings,
   ShoppingCart,
   Users,
-  Wifi,
-  WifiOff,
 } from "lucide-react";
 import {
   Bar,
@@ -31,6 +26,9 @@ import {
   YAxis,
 } from "recharts";
 
+import { DashboardShell } from "@/components/layout/DashboardShell";
+import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
+import { DashboardTopNav } from "@/components/layout/DashboardTopNav";
 import { ActivityTable } from "@/components/organisms/ActivityTable";
 import { CustomersTable } from "@/components/organisms/CustomersTable";
 import { OrdersTable } from "@/components/organisms/OrdersTable";
@@ -122,7 +120,6 @@ export default function HomePage() {
 
   const streamRef = useRef<ReturnType<typeof createFakeSse> | null>(null);
   const bufferRef = useRef<ReturnType<typeof createEventBuffer> | null>(null);
-  const dashboardHeaderRef = useRef<HTMLDivElement | null>(null);
   const kpiCardsRef = useRef<HTMLElement | null>(null);
   const salesChartRef = useRef<HTMLElement | null>(null);
   const categoryMixRef = useRef<HTMLElement | null>(null);
@@ -131,7 +128,6 @@ export default function HomePage() {
   const activityTableRef = useRef<HTMLElement | null>(null);
   const customersTableRef = useRef<HTMLElement | null>(null);
   const streamSummaryRef = useRef<HTMLElement | null>(null);
-  const sidebarControlsRef = useRef<HTMLDivElement | null>(null);
 
   const focusDomainSection = useCallback((domain: SearchDomain) => {
     const sectionMap: Record<SearchDomain, { key: string; target: HTMLElement | null }> = {
@@ -240,10 +236,6 @@ export default function HomePage() {
         tookMs: result.tookMs,
       });
       setSearchStatus("ready");
-
-      if (result.hits[0]) {
-        focusDomainSection(result.hits[0].domain);
-      }
     }, 240);
 
     return () => clearTimeout(timer);
@@ -315,112 +307,25 @@ export default function HomePage() {
   }, [lineSeries]);
 
   return (
-    <div className="min-h-screen bg-[#f4f7f6] text-slate-800">
-      <div className="mx-auto grid min-h-screen max-w-[1400px] lg:grid-cols-[230px_1fr]">
-        <aside className="border-r border-slate-200 bg-[#eef3f1] p-5">
-          <div className="mb-8 flex items-center gap-2 text-xl font-semibold text-[#145f47]">
-            <Activity className="h-5 w-5" />
-            Flup
-          </div>
-
-          <div className="space-y-2">
-            {MENU_ITEMS.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.label}
-                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${
-                    item.active
-                      ? "bg-[#d9ebe3] font-semibold text-[#145f47]"
-                      : "text-slate-600 hover:bg-[#e5efeb]"
-                  }`}
-                >
-                  <Icon className="h-4 w-4" />
-                  {item.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="mt-10 rounded-xl border border-slate-200 bg-white p-3">
-            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              <ChartNoAxesCombined className="h-3.5 w-3.5" />
-              Stream controls
-            </div>
-            <div ref={sidebarControlsRef} />
-            <label className="mb-2 flex items-center justify-between text-xs text-slate-600">
-              Chaos mode
-              <input
-                type="checkbox"
-                checked={chaosMode}
-                onChange={(event) => setChaosMode(event.target.checked)}
-                className="h-4 w-4 accent-emerald-600"
-              />
-            </label>
-            <label className="mb-2 block text-xs text-slate-600">
-              Rate
-              <select
-                className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs"
-                value={eventRate}
-                onChange={(event) => setEventRate(event.target.value as EventRate)}
-              >
-                <option value="slow">Slow</option>
-                <option value="normal">Normal</option>
-                <option value="fast">Fast</option>
-              </select>
-            </label>
-            <button
-              onClick={handleSimulateDisconnect}
-              className="mt-1 w-full rounded-md bg-slate-800 px-2 py-1.5 text-xs font-medium text-white hover:bg-slate-700"
-            >
-              Simulate disconnect
-            </button>
-          </div>
-
-          <div className="mt-6 flex items-center gap-2 text-sm text-slate-500">
-            <LogOut className="h-4 w-4" />
-            Log out
-          </div>
-        </aside>
-
-        <main className="p-5 lg:p-7">
-          <div
-            ref={dashboardHeaderRef}
-            className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl"
-          >
-            <h1 className="text-3xl font-semibold tracking-tight">Dashboard</h1>
-            <div className="flex w-full flex-wrap items-center justify-end gap-3 lg:w-auto">
-              <div className="relative w-full max-w-sm lg:w-[340px]">
-                <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                <input
-                  value={globalQuery}
-                  onChange={(event) => handleGlobalQueryChange(event.target.value)}
-                  placeholder="Search order, activity, customer, country..."
-                  className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-emerald-300"
-                />
-              </div>
-              <div className="flex items-center gap-3 text-xs text-slate-500">
-              <span className="rounded-md border border-slate-200 bg-white px-2 py-1">
-                Time period: Live
-              </span>
-              <span
-                className={`inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium ${
-                  connection === "connected"
-                    ? "bg-emerald-100 text-emerald-700"
-                    : "bg-rose-100 text-rose-700"
-                }`}
-              >
-                {connection === "connected" ? (
-                  <Wifi className="h-3.5 w-3.5" />
-                ) : (
-                  <WifiOff className="h-3.5 w-3.5" />
-                )}
-                {connection}
-              </span>
-              </div>
-            </div>
-          </div>
-
+    <DashboardShell
+      sidebar={(
+        <DashboardSidebar
+          menuItems={MENU_ITEMS}
+          chaosMode={chaosMode}
+          eventRate={eventRate}
+          onChaosModeChange={setChaosMode}
+          onEventRateChange={setEventRate}
+          onSimulateDisconnect={handleSimulateDisconnect}
+        />
+      )}
+      topNav={(
+        <DashboardTopNav
+          query={globalQuery}
+          connection={connection}
+          onQueryChange={handleGlobalQueryChange}
+        />
+      )}
+    >
           <section className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -677,9 +582,7 @@ export default function HomePage() {
           >
             <ActivityTable events={eventLog} />
           </section>
-        </main>
-      </div>
-    </div>
+    </DashboardShell>
   );
 }
 
