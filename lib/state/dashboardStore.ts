@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 import type { OrderEvent, StreamEvent, SystemEvent } from "@/lib/events";
+import { createSeedEvents } from "@/lib/stream/sampleData";
 
 export type ConnectionStatus =
   | "connecting"
@@ -202,7 +203,7 @@ const buildCountrySales = (orders: OrderRow[]): CountrySalesRow[] => {
     .slice(0, 8);
 };
 
-export const initialDashboardState: DashboardState = {
+const emptyDashboardState: DashboardState = {
   connection: "connecting",
   lastUpdatedAt: null,
   orders: [],
@@ -361,6 +362,12 @@ const reduceEventBatch = (
     outcomeSeries: buildOutcomeSeries(outcomeWindow),
   };
 };
+
+export const initialDashboardState = reduceEventBatch(
+  emptyDashboardState,
+  createSeedEvents(Date.now()),
+  Date.now(),
+);
 
 export const useDashboardStore = create<DashboardStore>((set) => ({
   ...initialDashboardState,

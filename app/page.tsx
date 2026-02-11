@@ -47,7 +47,6 @@ import type {
 import { useDashboardStore } from "@/lib/state/dashboardStore";
 import { createEventBuffer } from "@/lib/stream/buffer";
 import { createFakeSse, type EventRate } from "@/lib/stream/fakeSse";
-import { createSeedEvents } from "@/lib/stream/sampleData";
 
 const FLUSH_INTERVAL_MS = 200;
 
@@ -170,8 +169,6 @@ export default function HomePage() {
   );
 
   useEffect(() => {
-    useDashboardStore.getState().ingestBatch(createSeedEvents(Date.now()), Date.now());
-
     const stream = createFakeSse({
       chaosMode: initialChaosModeRef.current,
       eventRate: initialEventRateRef.current,
