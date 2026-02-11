@@ -11,7 +11,7 @@ import {
   TableRow,
   TableCell,
 } from "@/components/ui/table";
-import type { OrderRow } from "@/lib/state/dashboardReducer";
+import type { OrderRow } from "@/lib/state/dashboardStore";
 
 type OrdersTableProps = {
   orders: OrderRow[];
@@ -46,6 +46,9 @@ export function OrdersTable({ orders }: OrdersTableProps) {
         <TableHeader>
           <TableRow className="bg-slate-50">
             <TableHead>Order</TableHead>
+            <TableHead>Customer</TableHead>
+            <TableHead>Country</TableHead>
+            <TableHead>Category</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Amount</TableHead>
             <TableHead>Created</TableHead>
@@ -66,6 +69,9 @@ export function OrdersTable({ orders }: OrdersTableProps) {
                 <TableCell className="font-medium text-slate-800">
                   {order.orderId}
                 </TableCell>
+                <TableCell>{order.customerId}</TableCell>
+                <TableCell>{order.country}</TableCell>
+                <TableCell>{order.category}</TableCell>
                 <TableCell>
                   <Badge variant={statusVariant(order.status)}>
                     {order.status}

@@ -19,7 +19,7 @@ export function createOrderSearchProvider(orders: OrderRow[]): DomainSearchProvi
       const hits: GlobalSearchHit[] = [];
 
       orders.forEach((order) => {
-        const haystack = `${order.orderId} ${order.status} ${order.currency} ${order.amount.toFixed(2)}`;
+        const haystack = `${order.orderId} ${order.customerId} ${order.country} ${order.category} ${order.status} ${order.currency} ${order.amount.toFixed(2)}`;
         if (!includesAllTerms(haystack, query.terms)) return;
 
         const statusBoost = order.status === "failed" ? 3 : order.status === "authorized" ? 2 : 1;
@@ -27,7 +27,7 @@ export function createOrderSearchProvider(orders: OrderRow[]): DomainSearchProvi
           id: `orders:${order.orderId}`,
           domain: "orders",
           title: `${order.orderId} (${order.status})`,
-          subtitle: `${order.currency} ${order.amount.toFixed(2)} updated ${new Date(order.updatedAt).toLocaleTimeString()}`,
+          subtitle: `${order.customerId} | ${order.country} | ${order.currency} ${order.amount.toFixed(2)}`,
           at: order.updatedAt,
           score: buildScore(70 + statusBoost, order.updatedAt),
         });
@@ -47,14 +47,18 @@ export function createActivitySearchProvider(events: StreamEvent[]): DomainSearc
       events.forEach((event) => {
         const at = "at" in event ? event.at : "createdAt" in event ? event.createdAt : "authorizedAt" in event ? event.authorizedAt : event.failedAt;
         const orderId = "orderId" in event ? event.orderId : "system";
-        const haystack = `${event.type} ${orderId}`;
+        const customerId = "customerId" in event ? event.customerId : "";
+        const country = "country" in event ? event.country : "";
+        const category = "category" in event ? event.category : "";
+        const reason = "reason" in event ? event.reason : "";
+        const haystack = `${event.type} ${orderId} ${customerId} ${country} ${category} ${reason}`;
         if (!includesAllTerms(haystack, query.terms)) return;
 
         hits.push({
           id: `activity:${event.id}`,
           domain: "activity",
           title: event.type,
-          subtitle: `ref ${orderId} at ${new Date(at).toLocaleTimeString()}`,
+          subtitle: `ref ${orderId}${customerId ? ` / ${customerId}` : ""}${country ? ` / ${country}` : ""}${reason ? ` (${reason})` : ""}`,
           at,
           score: buildScore(60, at),
         });
@@ -67,6 +71,7 @@ export function createActivitySearchProvider(events: StreamEvent[]): DomainSearc
 
 type CustomerAggregate = {
   customerId: string;
+  country: string;
   orderCount: number;
   spend: number;
   lastSeenAt: number;
@@ -76,11 +81,12 @@ function deriveCustomers(orders: OrderRow[]): CustomerAggregate[] {
   const map = new Map<string, CustomerAggregate>();
 
   orders.forEach((order) => {
-    const customerId = `cus_${order.orderId.slice(-5)}`;
+    const customerId = order.customerId;
     const current = map.get(customerId);
     if (!current) {
       map.set(customerId, {
         customerId,
+        country: order.country,
         orderCount: 1,
         spend: order.amount,
         lastSeenAt: order.updatedAt,
@@ -91,6 +97,7 @@ function deriveCustomers(orders: OrderRow[]): CustomerAggregate[] {
     current.orderCount += 1;
     current.spend += order.amount;
     current.lastSeenAt = Math.max(current.lastSeenAt, order.updatedAt);
+    current.country = order.country;
   });
 
   return [...map.values()].sort((a, b) => b.lastSeenAt - a.lastSeenAt);
@@ -104,14 +111,14 @@ export function createCustomerSearchProvider(orders: OrderRow[]): DomainSearchPr
       const hits: GlobalSearchHit[] = [];
 
       customers.forEach((customer) => {
-        const haystack = `${customer.customerId} ${customer.orderCount} ${customer.spend.toFixed(2)}`;
+        const haystack = `${customer.customerId} ${customer.country} ${customer.orderCount} ${customer.spend.toFixed(2)}`;
         if (!includesAllTerms(haystack, query.terms)) return;
 
         hits.push({
           id: `customers:${customer.customerId}`,
           domain: "customers",
           title: customer.customerId,
-          subtitle: `${customer.orderCount} orders, ${customer.spend.toFixed(2)} USD total spend`,
+          subtitle: `${customer.country} | ${customer.orderCount} orders | ${customer.spend.toFixed(2)} USD`,
           at: customer.lastSeenAt,
           score: buildScore(55 + Math.min(8, customer.orderCount), customer.lastSeenAt),
         });

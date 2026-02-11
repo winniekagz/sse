@@ -31,6 +31,9 @@ import {
   YAxis,
 } from "recharts";
 
+import { ActivityTable } from "@/components/organisms/ActivityTable";
+import { CustomersTable } from "@/components/organisms/CustomersTable";
+import { OrdersTable } from "@/components/organisms/OrdersTable";
 import { createSearchEventBus } from "@/lib/search/eventBus";
 import {
   createActivitySearchProvider,
@@ -46,6 +49,7 @@ import type {
 import { useDashboardStore } from "@/lib/state/dashboardStore";
 import { createEventBuffer } from "@/lib/stream/buffer";
 import { createFakeSse, type EventRate } from "@/lib/stream/fakeSse";
+import { createSeedEvents } from "@/lib/stream/sampleData";
 
 const FLUSH_INTERVAL_MS = 200;
 
@@ -110,8 +114,10 @@ export default function HomePage() {
   const successRate = useDashboardStore((state) => state.successRate);
   const avgOrderValue = useDashboardStore((state) => state.avgOrderValue);
   const lineSeries = useDashboardStore((state) => state.lineSeries);
-  const outcomeSeries = useDashboardStore((state) => state.outcomeSeries);
   const orders = useDashboardStore((state) => state.orders);
+  const customers = useDashboardStore((state) => state.customers);
+  const categorySales = useDashboardStore((state) => state.categorySales);
+  const countrySales = useDashboardStore((state) => state.countrySales);
   const eventLog = useDashboardStore((state) => state.eventLog);
 
   const streamRef = useRef<ReturnType<typeof createFakeSse> | null>(null);
@@ -121,14 +127,17 @@ export default function HomePage() {
   const salesChartRef = useRef<HTMLElement | null>(null);
   const categoryMixRef = useRef<HTMLElement | null>(null);
   const countrySalesRef = useRef<HTMLElement | null>(null);
+  const ordersTableRef = useRef<HTMLElement | null>(null);
+  const activityTableRef = useRef<HTMLElement | null>(null);
+  const customersTableRef = useRef<HTMLElement | null>(null);
   const streamSummaryRef = useRef<HTMLElement | null>(null);
   const sidebarControlsRef = useRef<HTMLDivElement | null>(null);
 
   const focusDomainSection = useCallback((domain: SearchDomain) => {
     const sectionMap: Record<SearchDomain, { key: string; target: HTMLElement | null }> = {
-      orders: { key: "kpi_cards", target: kpiCardsRef.current },
-      activity: { key: "stream_summary", target: streamSummaryRef.current },
-      customers: { key: "country_sales", target: countrySalesRef.current },
+      orders: { key: "orders_table", target: ordersTableRef.current },
+      activity: { key: "activity_table", target: activityTableRef.current },
+      customers: { key: "customers_table", target: customersTableRef.current },
     };
 
     const selection = sectionMap[domain];
@@ -165,6 +174,8 @@ export default function HomePage() {
   );
 
   useEffect(() => {
+    useDashboardStore.getState().ingestBatch(createSeedEvents(Date.now()), Date.now());
+
     const stream = createFakeSse({
       chaosMode: initialChaosModeRef.current,
       eventRate: initialEventRateRef.current,
@@ -303,37 +314,6 @@ export default function HomePage() {
     });
   }, [lineSeries]);
 
-  const categorySales = useMemo(() => {
-    const success = outcomeSeries.find((item) => item.name === "Success")?.value ?? 0;
-    const failure = outcomeSeries.find((item) => item.name === "Failure")?.value ?? 0;
-    const total = success + failure || 1;
-
-    return [
-      { name: "Living room", value: Math.max(3, Math.round((success / total) * 26)) },
-      { name: "Kids", value: 17 },
-      { name: "Office", value: 13 },
-      { name: "Bedroom", value: 12 },
-      { name: "Kitchen", value: 9 },
-      { name: "Bathroom", value: 8 },
-      { name: "Dining room", value: 6 },
-      { name: "Decor", value: 5 },
-      { name: "Outdoor", value: 4 },
-    ];
-  }, [outcomeSeries]);
-
-  const countries = [
-    { name: "Poland", share: 19 },
-    { name: "Austria", share: 15 },
-    { name: "Spain", share: 13 },
-    { name: "Romania", share: 12 },
-    { name: "France", share: 11 },
-    { name: "Italy", share: 11 },
-    { name: "Germany", share: 10 },
-    { name: "Ukraine", share: 9 },
-  ];
-
-  const recentEvents = eventLog.slice(0, 5);
-
   return (
     <div className="min-h-screen bg-[#f4f7f6] text-slate-800">
       <div className="mx-auto grid min-h-screen max-w-[1400px] lg:grid-cols-[230px_1fr]">
@@ -409,7 +389,17 @@ export default function HomePage() {
             className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl"
           >
             <h1 className="text-3xl font-semibold tracking-tight">Dashboard</h1>
-            <div className="flex items-center gap-3 text-xs text-slate-500">
+            <div className="flex w-full flex-wrap items-center justify-end gap-3 lg:w-auto">
+              <div className="relative w-full max-w-sm lg:w-[340px]">
+                <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                <input
+                  value={globalQuery}
+                  onChange={(event) => handleGlobalQueryChange(event.target.value)}
+                  placeholder="Search order, activity, customer, country..."
+                  className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-emerald-300"
+                />
+              </div>
+              <div className="flex items-center gap-3 text-xs text-slate-500">
               <span className="rounded-md border border-slate-200 bg-white px-2 py-1">
                 Time period: Live
               </span>
@@ -427,6 +417,7 @@ export default function HomePage() {
                 )}
                 {connection}
               </span>
+              </div>
             </div>
           </div>
 
@@ -451,7 +442,7 @@ export default function HomePage() {
                 <input
                   value={globalQuery}
                   onChange={(event) => handleGlobalQueryChange(event.target.value)}
-                  placeholder="Try: order activity customer"
+                  placeholder="Try: order customer country"
                   className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-emerald-300"
                 />
               </div>
@@ -617,7 +608,7 @@ export default function HomePage() {
             >
               <h2 className="mb-4 text-3xl font-semibold tracking-tight">Sales by countries</h2>
               <div className="space-y-2 text-sm">
-                {countries.map((country) => (
+                {countrySales.map((country) => (
                   <div key={country.name} className="flex items-center justify-between border-b border-slate-100 pb-2">
                     <span className="inline-flex items-center gap-2 text-slate-700">
                       <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
@@ -626,6 +617,9 @@ export default function HomePage() {
                     <span className="font-semibold text-slate-800">{country.share}%</span>
                   </div>
                 ))}
+                {countrySales.length === 0 && (
+                  <p className="text-slate-500">Waiting for country sales data...</p>
+                )}
               </div>
             </article>
           </section>
@@ -654,13 +648,34 @@ export default function HomePage() {
               </div>
             </div>
 
-            <div className="mt-3 space-y-2 text-xs text-slate-600">
-              {recentEvents.map((event) => (
-                <div key={event.id} className="rounded-lg border border-slate-100 px-2.5 py-2">
-                  <span className="font-medium text-slate-700">{event.type}</span>
-                </div>
-              ))}
-            </div>
+            <p className="mt-3 text-xs text-slate-500">
+              SSE stream updates this panel, category mix, country sales, and the
+              tables below in realtime.
+            </p>
+          </section>
+
+          <section className="mt-4 grid gap-4 xl:grid-cols-2">
+            <article
+              ref={ordersTableRef}
+              className={activeComponentKey === "orders_table" ? "rounded-xl ring-2 ring-emerald-300" : "rounded-xl"}
+            >
+              <OrdersTable orders={orders} />
+            </article>
+            <article
+              ref={customersTableRef}
+              className={activeComponentKey === "customers_table" ? "rounded-xl ring-2 ring-emerald-300" : "rounded-xl"}
+            >
+              <CustomersTable customers={customers} />
+            </article>
+          </section>
+
+          <section
+            ref={activityTableRef}
+            className={`mt-4 rounded-xl ${
+              activeComponentKey === "activity_table" ? "ring-2 ring-emerald-300" : ""
+            }`}
+          >
+            <ActivityTable events={eventLog} />
           </section>
         </main>
       </div>

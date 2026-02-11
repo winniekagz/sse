@@ -2,6 +2,9 @@ export type OrderCreatedEvent = {
   id: string;
   type: "order_created";
   orderId: string;
+  customerId: string;
+  country: string;
+  category: string;
   amount: number;
   currency: "USD";
   createdAt: number;

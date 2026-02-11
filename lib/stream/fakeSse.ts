@@ -25,6 +25,37 @@ const RATE_MS: Record<EventRate, [number, number]> = {
 };
 
 const PAYMENT_DELAY_MS: [number, number] = [300, 1200];
+const CATEGORIES = [
+  "Living room",
+  "Kids",
+  "Office",
+  "Bedroom",
+  "Kitchen",
+  "Bathroom",
+  "Dining room",
+  "Decor",
+  "Outdoor",
+];
+const COUNTRIES = [
+  "United States",
+  "Canada",
+  "Germany",
+  "France",
+  "Spain",
+  "Italy",
+  "Poland",
+  "Romania",
+];
+const CUSTOMERS = [
+  "cus_acme",
+  "cus_globex",
+  "cus_umbrella",
+  "cus_stark",
+  "cus_wayne",
+  "cus_vehement",
+  "cus_initech",
+  "cus_hooli",
+];
 
 function rand(min: number, max: number) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -118,11 +149,17 @@ export function createFakeSse(options: FakeSseOptions = {}) {
     orderTimer = setTimeout(() => {
       if (!connected) return;
       const now = Date.now();
-      const orderId = `ord_${now.toString(36)}_${rand(10, 99)}`;
+      const customerId = CUSTOMERS[rand(0, CUSTOMERS.length - 1)];
+      const category = CATEGORIES[rand(0, CATEGORIES.length - 1)];
+      const country = COUNTRIES[rand(0, COUNTRIES.length - 1)];
+      const orderId = `ord_${customerId}_${now.toString(36)}_${rand(10, 99)}`;
       const created: OrderCreatedEvent = {
         id: createId(),
         type: "order_created",
         orderId,
+        customerId,
+        country,
+        category,
         amount: rand(18, 160) + Math.random(),
         currency: "USD",
         createdAt: now,

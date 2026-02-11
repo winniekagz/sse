@@ -3,7 +3,17 @@ import type { ParsedGlobalQuery, SearchDomain, SearchIntent } from "@/lib/search
 const DOMAIN_SYNONYMS: Record<SearchDomain, string[]> = {
   orders: ["order", "orders", "payment", "payments", "checkout"],
   activity: ["activity", "activities", "event", "events", "stream", "log", "logs"],
-  customers: ["customer", "customers", "user", "users", "buyer", "buyers"],
+  customers: [
+    "customer",
+    "customers",
+    "user",
+    "users",
+    "buyer",
+    "buyers",
+    "country",
+    "countries",
+    "coutry",
+  ],
 };
 
 const ALL_DOMAINS = Object.keys(DOMAIN_SYNONYMS) as SearchDomain[];

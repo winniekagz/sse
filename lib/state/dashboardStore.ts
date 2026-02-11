@@ -12,11 +12,34 @@ export type OrderStatus = "created" | "authorized" | "failed";
 
 export type OrderRow = {
   orderId: string;
+  customerId: string;
+  country: string;
+  category: string;
   amount: number;
   currency: "USD";
   status: OrderStatus;
   createdAt: number;
   updatedAt: number;
+};
+
+export type CustomerRow = {
+  customerId: string;
+  country: string;
+  orders: number;
+  spend: number;
+  lastOrderId: string;
+  lastStatus: OrderStatus;
+  lastUpdatedAt: number;
+};
+
+export type CategorySalesRow = {
+  name: string;
+  value: number;
+};
+
+export type CountrySalesRow = {
+  name: string;
+  share: number;
 };
 
 export type LinePoint = {
@@ -37,6 +60,9 @@ export type DashboardState = {
   connection: ConnectionStatus;
   lastUpdatedAt: number | null;
   orders: OrderRow[];
+  customers: CustomerRow[];
+  categorySales: CategorySalesRow[];
+  countrySales: CountrySalesRow[];
   eventLog: StreamEvent[];
   ordersPerMinute: number;
   successRate: number;
@@ -88,7 +114,7 @@ const buildOutcomeSeries = (outcomes: OutcomeMetric[]) => {
   return [
     { name: "Success", value: success },
     { name: "Failure", value: failure },
-  ];
+  ] as OutcomePoint[];
 };
 
 const updateConnection = (connection: ConnectionStatus, event: SystemEvent) => {
@@ -102,10 +128,87 @@ const updateConnection = (connection: ConnectionStatus, event: SystemEvent) => {
 const pruneByWindow = <T extends { at: number }>(items: T[], now: number) =>
   items.filter((item) => now - item.at <= WINDOW_MS);
 
+const buildCustomers = (orders: OrderRow[]): CustomerRow[] => {
+  const grouped = new Map<string, CustomerRow>();
+
+  orders.forEach((order) => {
+    const current = grouped.get(order.customerId);
+    if (!current) {
+      grouped.set(order.customerId, {
+        customerId: order.customerId,
+        country: order.country,
+        orders: 1,
+        spend: order.amount,
+        lastOrderId: order.orderId,
+        lastStatus: order.status,
+        lastUpdatedAt: order.updatedAt,
+      });
+      return;
+    }
+
+    current.orders += 1;
+    current.spend += order.amount;
+    if (order.updatedAt >= current.lastUpdatedAt) {
+      current.lastUpdatedAt = order.updatedAt;
+      current.lastOrderId = order.orderId;
+      current.lastStatus = order.status;
+      current.country = order.country;
+    }
+  });
+
+  return [...grouped.values()]
+    .sort((a, b) => b.lastUpdatedAt - a.lastUpdatedAt)
+    .slice(0, 25);
+};
+
+const buildCategorySales = (orders: OrderRow[]): CategorySalesRow[] => {
+  const totals = new Map<string, number>();
+  let sum = 0;
+
+  orders.forEach((order) => {
+    const next = (totals.get(order.category) ?? 0) + order.amount;
+    totals.set(order.category, next);
+    sum += order.amount;
+  });
+
+  if (!totals.size || sum <= 0) return [];
+
+  return [...totals.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, amount]) => ({
+      name,
+      value: Math.max(1, Math.round((amount / sum) * 100)),
+    }));
+};
+
+const buildCountrySales = (orders: OrderRow[]): CountrySalesRow[] => {
+  const totals = new Map<string, number>();
+  let sum = 0;
+
+  orders.forEach((order) => {
+    const next = (totals.get(order.country) ?? 0) + order.amount;
+    totals.set(order.country, next);
+    sum += order.amount;
+  });
+
+  if (!totals.size || sum <= 0) return [];
+
+  return [...totals.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, amount]) => ({
+      name,
+      share: Math.max(1, Math.round((amount / sum) * 100)),
+    }))
+    .slice(0, 8);
+};
+
 export const initialDashboardState: DashboardState = {
   connection: "connecting",
   lastUpdatedAt: null,
   orders: [],
+  customers: [],
+  categorySales: [],
+  countrySales: [],
   eventLog: [],
   ordersPerMinute: 0,
   successRate: 0,
@@ -153,6 +256,9 @@ const reduceEventBatch = (
       if (!existing) {
         orders.unshift({
           orderId: orderEvent.orderId,
+          customerId: orderEvent.customerId,
+          country: orderEvent.country,
+          category: orderEvent.category,
           amount: orderEvent.amount,
           currency: orderEvent.currency,
           status: "created",
@@ -171,6 +277,9 @@ const reduceEventBatch = (
       if (!orders.some((item) => item.orderId === orderEvent.orderId)) {
         orders.unshift({
           orderId: orderEvent.orderId,
+          customerId: "cus_unknown",
+          country: "Unknown",
+          category: "Unknown",
           amount: 0,
           currency: "USD",
           status: "created",
@@ -194,6 +303,9 @@ const reduceEventBatch = (
       if (!orders.some((item) => item.orderId === orderEvent.orderId)) {
         orders.unshift({
           orderId: orderEvent.orderId,
+          customerId: "cus_unknown",
+          country: "Unknown",
+          category: "Unknown",
           amount: 0,
           currency: "USD",
           status: "created",
@@ -235,6 +347,9 @@ const reduceEventBatch = (
     connection,
     lastUpdatedAt: now,
     orders,
+    customers: buildCustomers(orders),
+    categorySales: buildCategorySales(orders),
+    countrySales: buildCountrySales(orders),
     eventLog,
     ordersPerMinute,
     avgOrderValue,
