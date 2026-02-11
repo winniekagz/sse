@@ -11,6 +11,7 @@ import {
   LogOut,
   Map,
   Package,
+  Search,
   Settings,
   ShoppingCart,
   Users,
@@ -30,6 +31,18 @@ import {
   YAxis,
 } from "recharts";
 
+import { createSearchEventBus } from "@/lib/search/eventBus";
+import {
+  createActivitySearchProvider,
+  createCustomerSearchProvider,
+  createOrderSearchProvider,
+} from "@/lib/search/providers";
+import { createGlobalSearchService } from "@/lib/search/searchService";
+import type {
+  GlobalSearchHit,
+  SearchDomain,
+  SearchTriggerEvent,
+} from "@/lib/search/types";
 import { useDashboardStore } from "@/lib/state/dashboardStore";
 import { createEventBuffer } from "@/lib/stream/buffer";
 import { createFakeSse, type EventRate } from "@/lib/stream/fakeSse";
@@ -76,8 +89,20 @@ function formatCompact(value: number) {
 export default function HomePage() {
   const [chaosMode, setChaosMode] = useState(false);
   const [eventRate, setEventRate] = useState<EventRate>("normal");
+  const [globalQuery, setGlobalQuery] = useState("");
+  const [searchStatus, setSearchStatus] = useState<"idle" | "searching" | "ready">("idle");
+  const [searchHits, setSearchHits] = useState<GlobalSearchHit[]>([]);
+  const [searchMeta, setSearchMeta] = useState<{ domains: SearchDomain[]; terms: string[]; tookMs: number }>({
+    domains: ["orders", "activity", "customers"],
+    terms: [],
+    tookMs: 0,
+  });
+  const [activeComponentKey, setActiveComponentKey] = useState<string | null>(null);
+  const [searchTriggers, setSearchTriggers] = useState<SearchTriggerEvent[]>([]);
+
   const initialChaosModeRef = useRef(chaosMode);
   const initialEventRateRef = useRef(eventRate);
+  const [searchEventBus] = useState(() => createSearchEventBus());
 
   const connection = useDashboardStore((state) => state.connection);
   const lastUpdatedAt = useDashboardStore((state) => state.lastUpdatedAt);
@@ -91,6 +116,53 @@ export default function HomePage() {
 
   const streamRef = useRef<ReturnType<typeof createFakeSse> | null>(null);
   const bufferRef = useRef<ReturnType<typeof createEventBuffer> | null>(null);
+  const dashboardHeaderRef = useRef<HTMLDivElement | null>(null);
+  const kpiCardsRef = useRef<HTMLElement | null>(null);
+  const salesChartRef = useRef<HTMLElement | null>(null);
+  const categoryMixRef = useRef<HTMLElement | null>(null);
+  const countrySalesRef = useRef<HTMLElement | null>(null);
+  const streamSummaryRef = useRef<HTMLElement | null>(null);
+  const sidebarControlsRef = useRef<HTMLDivElement | null>(null);
+
+  const focusDomainSection = useCallback((domain: SearchDomain) => {
+    const sectionMap: Record<SearchDomain, { key: string; target: HTMLElement | null }> = {
+      orders: { key: "kpi_cards", target: kpiCardsRef.current },
+      activity: { key: "stream_summary", target: streamSummaryRef.current },
+      customers: { key: "country_sales", target: countrySalesRef.current },
+    };
+
+    const selection = sectionMap[domain];
+    if (!selection) return;
+
+    setActiveComponentKey(selection.key);
+    selection.target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = searchEventBus.subscribe((event) => {
+      setSearchTriggers((prev) => [event, ...prev].slice(0, 8));
+    });
+
+    return unsubscribe;
+  }, [searchEventBus]);
+
+  const searchProviders = useMemo(
+    () => ({
+      orders: createOrderSearchProvider(orders),
+      activity: createActivitySearchProvider(eventLog),
+      customers: createCustomerSearchProvider(orders),
+    }),
+    [eventLog, orders],
+  );
+
+  const searchService = useMemo(
+    () =>
+      createGlobalSearchService({
+        providers: searchProviders,
+        eventBus: searchEventBus,
+      }),
+    [searchEventBus, searchProviders],
+  );
 
   useEffect(() => {
     const stream = createFakeSse({
@@ -131,8 +203,47 @@ export default function HomePage() {
     streamRef.current?.setEventRate(eventRate);
   }, [eventRate]);
 
+  useEffect(() => {
+    const query = globalQuery.trim();
+    if (!query) {
+      const resetTimer = setTimeout(() => {
+        setSearchStatus("idle");
+        setSearchHits([]);
+        setActiveComponentKey(null);
+        setSearchMeta({
+          domains: ["orders", "activity", "customers"],
+          terms: [],
+          tookMs: 0,
+        });
+      }, 0);
+
+      return () => clearTimeout(resetTimer);
+    }
+
+    const timer = setTimeout(() => {
+      const result = searchService.search(query);
+      setSearchHits(result.hits);
+      setSearchMeta({
+        domains: result.selectedDomains,
+        terms: result.terms,
+        tookMs: result.tookMs,
+      });
+      setSearchStatus("ready");
+
+      if (result.hits[0]) {
+        focusDomainSection(result.hits[0].domain);
+      }
+    }, 240);
+
+    return () => clearTimeout(timer);
+  }, [focusDomainSection, globalQuery, searchService]);
+
   const handleSimulateDisconnect = useCallback(() => {
     streamRef.current?.simulateDisconnect();
+  }, []);
+  const handleGlobalQueryChange = useCallback((value: string) => {
+    setGlobalQuery(value);
+    setSearchStatus(value.trim() ? "searching" : "idle");
   }, []);
 
   const totalRevenue = useMemo(
@@ -256,6 +367,7 @@ export default function HomePage() {
               <ChartNoAxesCombined className="h-3.5 w-3.5" />
               Stream controls
             </div>
+            <div ref={sidebarControlsRef} />
             <label className="mb-2 flex items-center justify-between text-xs text-slate-600">
               Chaos mode
               <input
@@ -292,7 +404,10 @@ export default function HomePage() {
         </aside>
 
         <main className="p-5 lg:p-7">
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <div
+            ref={dashboardHeaderRef}
+            className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl"
+          >
             <h1 className="text-3xl font-semibold tracking-tight">Dashboard</h1>
             <div className="flex items-center gap-3 text-xs text-slate-500">
               <span className="rounded-md border border-slate-200 bg-white px-2 py-1">
@@ -315,7 +430,87 @@ export default function HomePage() {
             </div>
           </div>
 
-          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <section className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">
+                  Global search (event-driven)
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Type mixed intent queries like:
+                  {" "}
+                  <span className="font-mono">order failed customer</span>
+                  {" "}
+                  or
+                  {" "}
+                  <span className="font-mono">activity stream_reconnecting</span>
+                </p>
+              </div>
+              <div className="relative w-full max-w-md">
+                <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                <input
+                  value={globalQuery}
+                  onChange={(event) => handleGlobalQueryChange(event.target.value)}
+                  placeholder="Try: order activity customer"
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-emerald-300"
+                />
+              </div>
+            </div>
+            <div className="mt-3 grid gap-3 lg:grid-cols-[1.4fr_1fr]">
+              <div className="space-y-2">
+                {searchHits.slice(0, 6).map((hit) => (
+                  <button
+                    key={hit.id}
+                    onClick={() => focusDomainSection(hit.domain)}
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left hover:bg-slate-100"
+                  >
+                    <p className="font-mono text-xs uppercase tracking-wide text-emerald-700">
+                      {hit.domain}
+                    </p>
+                    <p className="text-sm font-medium text-slate-800">{hit.title}</p>
+                    <p className="text-xs text-slate-500">{hit.subtitle}</p>
+                  </button>
+                ))}
+                {searchStatus === "ready" && searchHits.length === 0 && (
+                  <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-500">
+                    No results for this query.
+                  </p>
+                )}
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                <p className="mb-2 font-semibold text-slate-700">Search status</p>
+                <p>
+                  {searchStatus === "idle" && "Idle - waiting for query."}
+                  {searchStatus === "searching" && "Searching domains and emitting trigger events..."}
+                  {searchStatus === "ready" && `Ready - ${searchHits.length} hits in ${searchMeta.tookMs}ms.`}
+                </p>
+                <p className="mt-2">
+                  Domains:
+                  {" "}
+                  <span className="font-mono">{searchMeta.domains.join(", ")}</span>
+                </p>
+                <p className="mt-1">
+                  Parsed terms:
+                  {" "}
+                  <span className="font-mono">{searchMeta.terms.length ? searchMeta.terms.join(", ") : "none"}</span>
+                </p>
+                <p className="mt-2">
+                  Last trigger:
+                  {" "}
+                  {searchTriggers[0]
+                    ? `${searchTriggers[0].type} at ${new Date(searchTriggers[0].at).toLocaleTimeString()}`
+                    : "none"}
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section
+            ref={kpiCardsRef}
+            className={`grid gap-3 rounded-xl p-1 md:grid-cols-2 xl:grid-cols-5 ${
+              activeComponentKey === "kpi_cards" ? "ring-2 ring-emerald-300" : ""
+            }`}
+          >
             {cards.map((card) => {
               const Icon = card.icon;
               return (
@@ -343,7 +538,10 @@ export default function HomePage() {
             </article>
           </section>
 
-          <section className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+          <section
+            ref={salesChartRef}
+            className="mt-4 rounded-xl border border-slate-200 bg-white p-4"
+          >
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-2xl font-semibold">Product sales</h2>
               <div className="flex items-center gap-4 text-xs text-slate-600">
@@ -370,7 +568,10 @@ export default function HomePage() {
           </section>
 
           <section className="mt-4 grid gap-4 xl:grid-cols-[1.2fr_1fr]">
-            <article className="rounded-xl border border-slate-200 bg-white p-4">
+            <article
+              ref={categoryMixRef}
+              className="rounded-xl border border-slate-200 bg-white p-4"
+            >
               <h2 className="mb-4 text-3xl font-semibold tracking-tight">Sales by product category</h2>
               <div className="grid items-center gap-3 lg:grid-cols-[1fr_230px]">
                 <div className="grid grid-cols-2 gap-2 text-sm">
@@ -408,7 +609,12 @@ export default function HomePage() {
               </div>
             </article>
 
-            <article className="rounded-xl border border-slate-200 bg-white p-4">
+            <article
+              ref={countrySalesRef}
+              className={`rounded-xl border border-slate-200 bg-white p-4 ${
+                activeComponentKey === "country_sales" ? "ring-2 ring-emerald-300" : ""
+              }`}
+            >
               <h2 className="mb-4 text-3xl font-semibold tracking-tight">Sales by countries</h2>
               <div className="space-y-2 text-sm">
                 {countries.map((country) => (
@@ -424,7 +630,12 @@ export default function HomePage() {
             </article>
           </section>
 
-          <section className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+          <section
+            ref={streamSummaryRef}
+            className={`mt-4 rounded-xl border border-slate-200 bg-white p-4 ${
+              activeComponentKey === "stream_summary" ? "ring-2 ring-emerald-300" : ""
+            }`}
+          >
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-lg font-semibold text-slate-900">Realtime stream summary</h3>
               <p className="text-xs text-slate-500">
@@ -456,4 +667,5 @@ export default function HomePage() {
     </div>
   );
 }
+
 
