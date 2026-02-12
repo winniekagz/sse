@@ -20,6 +20,18 @@ const getEventMeta = (event: StreamEvent) => {
   if (event.type === "payment_failed") {
     return `Payment failed (${event.reason})`;
   }
+  if (event.type === "order_picked") {
+    return `Order picked for ${event.orderId}`;
+  }
+  if (event.type === "order_shipped") {
+    return `Order shipped (${event.carrier})`;
+  }
+  if (event.type === "order_delivered") {
+    return `Order delivered`;
+  }
+  if (event.type === "order_cancelled") {
+    return `Order cancelled (${event.reason})`;
+  }
   if (event.type === "stream_connected") {
     return "Stream connected";
   }
@@ -39,6 +51,7 @@ const badgeVariant = (event: StreamEvent) => {
   if (event.type === "payment_failed" || event.type === "stream_disconnected") {
     return "danger";
   }
+  if (event.type === "order_delivered") return "success";
   if (event.type === "stream_reconnecting") return "warning";
   if (event.type === "payment_authorized") return "success";
   return "outline";
@@ -56,7 +69,15 @@ export function EventLogItem({ event }: EventLogItemProps) {
         ? event.authorizedAt
         : "failedAt" in event
           ? event.failedAt
-          : event.at;
+          : "pickedAt" in event
+            ? event.pickedAt
+            : "shippedAt" in event
+              ? event.shippedAt
+              : "deliveredAt" in event
+                ? event.deliveredAt
+                : "cancelledAt" in event
+                  ? event.cancelledAt
+                  : event.at;
 
   return (
     <div className="flex items-start justify-between gap-3 rounded-lg border border-slate-100 bg-white px-3 py-2 text-xs">

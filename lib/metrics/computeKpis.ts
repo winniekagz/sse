@@ -35,7 +35,7 @@ export function computeKpis(
 
   const atRiskShipments = orders.filter(
     (order) =>
-      order.status === "authorized" &&
+      (order.status === "authorized" || order.status === "picked") &&
       now - order.updatedAt > KPI_THRESHOLDS.shippingLateMs,
   ).length;
 

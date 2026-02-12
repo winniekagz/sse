@@ -13,7 +13,8 @@ type CustomersTableProps = {
 };
 
 const statusVariant = (status: CustomerRow["lastStatus"]) => {
-  if (status === "authorized") return "success";
+  if (status === "authorized" || status === "picked" || status === "shipped" || status === "delivered") return "success";
+  if (status === "cancelled") return "outline";
   if (status === "failed") return "danger";
   return "warning";
 };

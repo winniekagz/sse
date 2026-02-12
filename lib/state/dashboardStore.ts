@@ -1,7 +1,13 @@
 import { create } from "zustand";
 
 import type { StreamEvent, SystemEvent, OrderEvent } from "@/lib/events";
+import {
+  applyEventToStore,
+  type OrderAggregate,
+} from "@/lib/domain/orders/reducer";
+import { selectOrders } from "@/lib/domain/orders/selectors";
 import { createSeedEvents } from "@/lib/stream/sampleData";
+import { normalizeEventBatch } from "@/lib/state/normalizeEvent";
 
 export type ConnectionStatus =
   | "connecting"
@@ -9,7 +15,14 @@ export type ConnectionStatus =
   | "reconnecting"
   | "offline";
 
-export type OrderStatus = "created" | "authorized" | "failed";
+export type OrderStatus =
+  | "created"
+  | "authorized"
+  | "picked"
+  | "shipped"
+  | "delivered"
+  | "failed"
+  | "cancelled";
 
 export type OrderRow = {
   orderId: string;
@@ -19,6 +32,7 @@ export type OrderRow = {
   amount: number;
   currency: "USD";
   status: OrderStatus;
+  currentIssue: "PAYMENT_FAILED" | "STUCK_PENDING" | "SHIPPING_DELAY" | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -73,6 +87,9 @@ export type DashboardState = {
   createdWindow: CreatedMetric[];
   outcomeWindow: OutcomeMetric[];
   processedEventIds: string[];
+  seenEventIds: Record<string, true>;
+  lastSeq: number;
+  ordersById: Record<string, OrderAggregate>;
   orderEventsById: Record<string, OrderEvent[]>;
 };
 
@@ -223,6 +240,9 @@ const emptyDashboardState: DashboardState = {
   createdWindow: [],
   outcomeWindow: [],
   processedEventIds: [],
+  seenEventIds: {},
+  lastSeq: 0,
+  ordersById: {},
   orderEventsById: {},
 };
 
@@ -232,19 +252,27 @@ const reduceEventBatch = (
   receivedAt: number,
 ): DashboardState => {
   const now = receivedAt;
+  const normalizedBatch = normalizeEventBatch(events, state.lastSeq);
   let connection = state.connection;
-  let orders = [...state.orders];
+  let ordersDomainStore = {
+    ordersById: { ...state.ordersById },
+    orderTimelinesById: { ...state.orderEventsById },
+    seenEventIds: { ...state.seenEventIds },
+    lastSeq: state.lastSeq,
+  };
   const eventLog = [...state.eventLog];
   let createdWindow = [...state.createdWindow];
   let outcomeWindow = [...state.outcomeWindow];
   let processedEventIds = [...state.processedEventIds];
-  let orderEventsById = { ...state.orderEventsById };
   const processedSet = new Set(processedEventIds);
 
-  events.forEach((event) => {
-    if (processedSet.has(event.id)) return;
-    processedSet.add(event.id);
-    processedEventIds.push(event.id);
+  normalizedBatch.events.forEach((event) => {
+    const dedupeId = event.eventId ?? event.id;
+    if (ordersDomainStore.seenEventIds[dedupeId] || processedSet.has(dedupeId)) return;
+
+    ordersDomainStore = applyEventToStore(ordersDomainStore, event, now);
+    processedSet.add(dedupeId);
+    processedEventIds.push(dedupeId);
 
     eventLog.unshift(event);
     if (eventLog.length > 100) eventLog.pop();
@@ -259,27 +287,7 @@ const reduceEventBatch = (
       return;
     }
 
-    if ("orderId" in event) {
-      const existing = orderEventsById[event.orderId] ?? [];
-      const next = [event as OrderEvent, ...existing].slice(0, 16);
-      orderEventsById = { ...orderEventsById, [event.orderId]: next };
-    }
-
     if (event.type === "order_created") {
-      const existing = orders.find((item) => item.orderId === event.orderId);
-      if (!existing) {
-        orders.unshift({
-          orderId: event.orderId,
-          customerId: event.customerId,
-          country: event.country,
-          category: event.category,
-          amount: event.amount,
-          currency: event.currency,
-          status: "created",
-          createdAt: event.createdAt,
-          updatedAt: event.createdAt,
-        });
-      }
       createdWindow.push({
         at: event.createdAt,
         amount: event.amount,
@@ -288,24 +296,6 @@ const reduceEventBatch = (
     }
 
     if (event.type === "payment_authorized") {
-      if (!orders.some((item) => item.orderId === event.orderId)) {
-        orders.unshift({
-          orderId: event.orderId,
-          customerId: "cus_unknown",
-          country: "Unknown",
-          category: "Unknown",
-          amount: 0,
-          currency: "USD",
-          status: "created",
-          createdAt: event.authorizedAt,
-          updatedAt: event.authorizedAt,
-        });
-      }
-      orders = orders.map((order) =>
-        order.orderId === event.orderId
-          ? { ...order, status: "authorized", updatedAt: event.authorizedAt }
-          : order,
-      );
       outcomeWindow.push({
         at: event.authorizedAt,
         ok: true,
@@ -314,24 +304,6 @@ const reduceEventBatch = (
     }
 
     if (event.type === "payment_failed") {
-      if (!orders.some((item) => item.orderId === event.orderId)) {
-        orders.unshift({
-          orderId: event.orderId,
-          customerId: "cus_unknown",
-          country: "Unknown",
-          category: "Unknown",
-          amount: 0,
-          currency: "USD",
-          status: "created",
-          createdAt: event.failedAt,
-          updatedAt: event.failedAt,
-        });
-      }
-      orders = orders.map((order) =>
-        order.orderId === event.orderId
-          ? { ...order, status: "failed", updatedAt: event.failedAt }
-          : order,
-      );
       outcomeWindow.push({
         at: event.failedAt,
         ok: false,
@@ -340,9 +312,29 @@ const reduceEventBatch = (
     }
   });
 
-  orders = orders.slice(0, 50);
+  const orders = selectOrders(ordersDomainStore.ordersById, 50).map((order) => ({
+    orderId: order.orderId,
+    customerId: order.customerId,
+    country: order.country,
+    category: order.category,
+    amount: order.amount,
+    currency: order.currency,
+    status: order.status,
+    currentIssue: order.currentIssue,
+    createdAt: order.createdAt,
+    updatedAt: order.updatedAt,
+  }));
+
   if (processedEventIds.length > 400) {
     processedEventIds = processedEventIds.slice(-400);
+    const compactSeen: Record<string, true> = {};
+    processedEventIds.forEach((id) => {
+      compactSeen[id] = true;
+    });
+    ordersDomainStore = {
+      ...ordersDomainStore,
+      seenEventIds: compactSeen,
+    };
   }
   createdWindow = pruneByWindow(createdWindow, now);
   outcomeWindow = pruneByWindow(outcomeWindow, now);
@@ -371,7 +363,10 @@ const reduceEventBatch = (
     createdWindow,
     outcomeWindow,
     processedEventIds,
-    orderEventsById,
+    seenEventIds: ordersDomainStore.seenEventIds,
+    lastSeq: Math.max(ordersDomainStore.lastSeq, normalizedBatch.lastSeq),
+    ordersById: ordersDomainStore.ordersById,
+    orderEventsById: ordersDomainStore.orderTimelinesById,
     lineSeries: buildLineSeries(now, createdWindow),
     outcomeSeries: buildOutcomeSeries(outcomeWindow),
   };

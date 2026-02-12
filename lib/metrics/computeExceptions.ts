@@ -32,7 +32,7 @@ export function computeExceptions(
 
   const delayedShipments = orders.filter(
     (order) =>
-      order.status === "authorized" &&
+      (order.status === "authorized" || order.status === "picked") &&
       now - order.updatedAt > KPI_THRESHOLDS.shippingLateMs,
   );
 
@@ -47,26 +47,27 @@ export function computeExceptions(
     {
       id: "exception_payment_stuck",
       kind: "payment_stuck",
-      title: `${stuckOrders.length} orders stuck in PAYMENT_PENDING > ${formatMinutes(
+      title: `${stuckOrders.length} orders at checkout risk (payment pending > ${formatMinutes(
         KPI_THRESHOLDS.paymentPendingMs,
-      )} min`,
+      )} min)`,
       count: stuckOrders.length,
       orderIds: stuckOrders.map((order) => order.orderId),
       severity: stuckOrders.length ? "warning" : "info",
+      helper: "Potential revenue loss if customers drop before payment is completed.",
     },
     {
       id: "exception_shipping_delayed",
       kind: "shipping_delayed",
-      title: `${delayedShipments.length} shipments delayed`,
+      title: `${delayedShipments.length} shipments at SLA risk`,
       count: delayedShipments.length,
       orderIds: delayedShipments.map((order) => order.orderId),
       severity: delayedShipments.length ? "danger" : "info",
-      helper: `SLA ${formatMinutes(KPI_THRESHOLDS.shippingLateMs)} min`,
+      helper: `Fulfillment SLA target: ${formatMinutes(KPI_THRESHOLDS.shippingLateMs)} min`,
     },
     {
       id: "exception_failure_spike",
       kind: "failure_spike",
-      title: `${recentFailures.length} failures in last ${formatMinutes(
+      title: `${recentFailures.length} payment failures in the last ${formatMinutes(
         KPI_THRESHOLDS.failureWindowMs,
       )} minutes`,
       count: recentFailures.length,
@@ -78,6 +79,7 @@ export function computeExceptions(
         ),
       ),
       severity: recentFailures.length ? "danger" : "info",
+      helper: "Payment instability can directly reduce conversion and daily revenue.",
     },
   ] as ExceptionItem[];
 }

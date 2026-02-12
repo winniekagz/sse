@@ -13,6 +13,7 @@ const baseOrder: OrderRow = {
   amount: 120,
   currency: "USD",
   status: "created",
+  currentIssue: null,
   createdAt: now - 5 * 60 * 1000,
   updatedAt: now - 5 * 60 * 1000,
 };
@@ -22,6 +23,9 @@ export function runComputeMetricsTests() {
   const events: StreamEvent[] = [
     {
       id: "evt1",
+      eventId: "evt1",
+      ts: now - 60 * 1000,
+      seq: 1,
       type: "payment_failed",
       orderId: baseOrder.orderId,
       failedAt: now - 60 * 1000,

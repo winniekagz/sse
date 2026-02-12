@@ -16,7 +16,8 @@ type OrdersTableProps = {
 };
 
 const statusVariant = (status: OrderRow["status"]) => {
-  if (status === "authorized") return "success";
+  if (status === "authorized" || status === "picked" || status === "shipped" || status === "delivered") return "success";
+  if (status === "cancelled") return "outline";
   if (status === "failed") return "danger";
   return "warning";
 };

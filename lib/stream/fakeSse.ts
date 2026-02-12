@@ -1,5 +1,8 @@
 import type {
   OrderCreatedEvent,
+  OrderDeliveredEvent,
+  OrderPickedEvent,
+  OrderShippedEvent,
   PaymentAuthorizedEvent,
   PaymentFailedEvent,
   StreamEvent,
@@ -25,6 +28,9 @@ const RATE_MS: Record<EventRate, [number, number]> = {
 };
 
 const PAYMENT_DELAY_MS: [number, number] = [300, 1200];
+const PICK_DELAY_MS: [number, number] = [250, 900];
+const SHIP_DELAY_MS: [number, number] = [600, 1800];
+const DELIVER_DELAY_MS: [number, number] = [1000, 2600];
 const CATEGORIES = [
   "Living room",
   "Kids",
@@ -76,8 +82,20 @@ export function createFakeSse(options: FakeSseOptions = {}) {
   let orderTimer: ReturnType<typeof setTimeout> | null = null;
   let disconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let seq = 0;
 
   const listeners = new Set<Listener>();
+
+  const makeEnvelope = (ts = Date.now()) => {
+    const eventId = createId();
+    seq += 1;
+    return {
+      id: eventId,
+      eventId,
+      ts,
+      seq,
+    };
+  };
 
   const emitNow = (event: StreamEvent) => {
     listeners.forEach((listener) => listener(event));
@@ -106,39 +124,43 @@ export function createFakeSse(options: FakeSseOptions = {}) {
   };
 
   const emitConnected = () => {
+    const now = Date.now();
     const event: StreamConnectedEvent = {
-      id: createId(),
+      ...makeEnvelope(now),
       type: "stream_connected",
-      at: Date.now(),
+      at: now,
     };
     emit(event);
   };
 
   const emitDisconnected = (reason: StreamDisconnectedEvent["reason"]) => {
+    const now = Date.now();
     const event: StreamDisconnectedEvent = {
-      id: createId(),
+      ...makeEnvelope(now),
       type: "stream_disconnected",
-      at: Date.now(),
+      at: now,
       reason,
     };
     emit(event);
   };
 
   const emitReconnecting = (attempt: number) => {
+    const now = Date.now();
     const event: StreamReconnectingEvent = {
-      id: createId(),
+      ...makeEnvelope(now),
       type: "stream_reconnecting",
-      at: Date.now(),
+      at: now,
       attempt,
     };
     emit(event);
   };
 
   const emitReconnected = () => {
+    const now = Date.now();
     const event: StreamReconnectedEvent = {
-      id: createId(),
+      ...makeEnvelope(now),
       type: "stream_reconnected",
-      at: Date.now(),
+      at: now,
     };
     emit(event);
   };
@@ -154,7 +176,7 @@ export function createFakeSse(options: FakeSseOptions = {}) {
       const country = COUNTRIES[rand(0, COUNTRIES.length - 1)];
       const orderId = `ord_${customerId}_${now.toString(36)}_${rand(10, 99)}`;
       const created: OrderCreatedEvent = {
-        id: createId(),
+        ...makeEnvelope(now),
         type: "order_created",
         orderId,
         customerId,
@@ -179,19 +201,64 @@ export function createFakeSse(options: FakeSseOptions = {}) {
         if (!connected) return;
         const ok = Math.random() < 0.85;
         if (ok) {
+          const authorizedAt = Date.now();
           const authorized: PaymentAuthorizedEvent = {
-            id: createId(),
+            ...makeEnvelope(authorizedAt),
             type: "payment_authorized",
             orderId,
-            authorizedAt: Date.now(),
+            authorizedAt,
           };
           emit(authorized);
+
+          const shouldShip = Math.random() < 0.8;
+          if (shouldShip) {
+            setTimeout(() => {
+              if (!connected) return;
+              const pickedAt = Date.now();
+              const picked: OrderPickedEvent = {
+                ...makeEnvelope(pickedAt),
+                type: "order_picked",
+                orderId,
+                pickedAt,
+              };
+              emit(picked);
+            }, rand(PICK_DELAY_MS[0], PICK_DELAY_MS[1]));
+
+            setTimeout(() => {
+              if (!connected) return;
+              const shippedAt = Date.now();
+              const shipped: OrderShippedEvent = {
+                ...makeEnvelope(shippedAt),
+                type: "order_shipped",
+                orderId,
+                shippedAt,
+                carrier: ["ups", "fedex", "dhl"][rand(0, 2)] as OrderShippedEvent["carrier"],
+              };
+              emit(shipped);
+            }, rand(SHIP_DELAY_MS[0], SHIP_DELAY_MS[1]));
+
+            const shouldDeliver = Math.random() < 0.75;
+            if (shouldDeliver) {
+              setTimeout(() => {
+                if (!connected) return;
+                const deliveredAt = Date.now();
+                const delivered: OrderDeliveredEvent = {
+                  ...makeEnvelope(deliveredAt),
+                  type: "order_delivered",
+                  orderId,
+                  deliveredAt,
+                };
+                emit(delivered);
+              }, rand(DELIVER_DELAY_MS[0], DELIVER_DELAY_MS[1]));
+            }
+          }
         } else {
+          const failedAt = Date.now();
           const failed: PaymentFailedEvent = {
-            id: createId(),
+            ...makeEnvelope(failedAt),
             type: "payment_failed",
             orderId,
-            failedAt: Date.now(),
+            failedAt,
             reason: ["insufficient_funds", "card_expired", "network_error"][
               rand(0, 2)
             ] as PaymentFailedEvent["reason"],

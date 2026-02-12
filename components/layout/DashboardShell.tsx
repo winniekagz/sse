@@ -10,8 +10,8 @@ type DashboardShellProps = {
 
 export function DashboardShell({ sidebar, topNav, children }: DashboardShellProps) {
   return (
-    <div className="h-screen overflow-hidden bg-[#f4f7f6] text-slate-800  w-full">
-      <div className="mx-auto grid h-full min-h-0 max-w-[1400px] overflow-hidden lg:grid-cols-[230px_1fr]">
+    <div className="h-screen w-full overflow-hidden bg-[#f4f7f6] text-slate-800">
+      <div className="grid h-full min-h-0 w-full overflow-hidden lg:grid-cols-[230px_1fr]">
         <aside className="h-full min-h-0 max-h-screen overflow-hidden border-r border-slate-200 bg-[#eef3f1] p-5">
           {sidebar}
         </aside>

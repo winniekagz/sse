@@ -1,97 +1,68 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import {
-  AlarmClock,
-  AlertTriangle,
-  BadgeDollarSign,
-  PackageCheck,
-  Truck,
-} from "lucide-react";
+import { useMemo } from "react";
+import { CheckCheck, Clock3, Package, PackageCheck, Truck } from "lucide-react";
 
+import type { SimpleKpis } from "@/lib/domain/orders/selectors";
 import type { OrdersFilter } from "@/lib/filters/ordersFilter";
-import type { KpiMetrics } from "@/lib/metrics/computeKpis";
-import { KPI_THRESHOLDS } from "@/lib/metrics/thresholds";
 import { cn } from "@/lib/utils";
 
 type KpiStripProps = {
-  metrics: KpiMetrics;
+  metrics: SimpleKpis;
   onSelectFilter?: (filter: OrdersFilter) => void;
   isLoading?: boolean;
 };
 
-const formatMoney = (value: number) =>
-  new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(value);
-
-const formatMinutes = (value: number) => {
-  if (!Number.isFinite(value) || value <= 0) return "0 min";
-  if (value < 60) return `${Math.round(value)} min`;
-  const hours = value / 60;
-  return `${hours.toFixed(1)} hr`;
-};
-
 export function KpiStrip({ metrics, onSelectFilter, isLoading }: KpiStripProps) {
-  const [stableMetrics, setStableMetrics] = useState(metrics);
-
-  useEffect(() => {
-    if (metrics.hasData) {
-      setStableMetrics(metrics);
-    }
-  }, [metrics]);
-
   const cards = useMemo(
     () => [
       {
-        id: "orders_today",
-        label: "Orders today",
-        value: stableMetrics.ordersToday.toLocaleString("en-US"),
-        helper: "Local time",
+        id: "total",
+        label: "Total orders",
+        value: metrics.total.toLocaleString("en-US"),
+        helper: "All tracked",
+        icon: Package,
+        onClick: () => onSelectFilter?.({ id: "all", label: "All orders" }),
+        clickable: true,
+      },
+      {
+        id: "failed",
+        label: "Failed",
+        value: metrics.failed.toLocaleString("en-US"),
+        helper: "Payment failures",
+        icon: Clock3,
+        onClick: () => onSelectFilter?.({ id: "failed", label: "Failed orders" }),
+        clickable: true,
+      },
+      {
+        id: "pending",
+        label: "Pending",
+        value: metrics.pending.toLocaleString("en-US"),
+        helper: "Created/Paid/Picked",
         icon: PackageCheck,
-      },
-      {
-        id: "revenue_today",
-        label: "Revenue today",
-        value: formatMoney(stableMetrics.revenueToday),
-        helper: "Captured",
-        icon: BadgeDollarSign,
-      },
-      {
-        id: "failed_payments",
-        label: "Failed payments",
-        value: stableMetrics.failedPayments.toLocaleString("en-US"),
-        helper: "Today",
-        icon: AlertTriangle,
-        onClick: () =>
-          onSelectFilter?.({ id: "failed", label: "Failed payments" }),
+        onClick: () => onSelectFilter?.({ id: "pending", label: "Pending orders" }),
         clickable: true,
       },
       {
-        id: "at_risk",
-        label: "At-risk shipments",
-        value: stableMetrics.atRiskShipments.toLocaleString("en-US"),
-        helper: "SLA risk",
+        id: "shipped",
+        label: "Shipped",
+        value: metrics.shipped.toLocaleString("en-US"),
+        helper: "In transit",
         icon: Truck,
-        onClick: () =>
-          onSelectFilter?.({
-            id: "shipping_at_risk",
-            label: "At-risk shipments",
-            thresholdMs: KPI_THRESHOLDS.shippingLateMs,
-          }),
+        onClick: () => onSelectFilter?.({ id: "shipped", label: "Shipped orders" }),
         clickable: true,
       },
       {
-        id: "avg_time",
-        label: "Avg time in state",
-        value: formatMinutes(stableMetrics.avgStateMinutes),
-        helper: "Today",
-        icon: AlarmClock,
+        id: "delivered",
+        label: "Delivered",
+        value: metrics.delivered.toLocaleString("en-US"),
+        helper: "Completed",
+        icon: CheckCheck,
+        onClick: () => onSelectFilter?.({ id: "delivered", label: "Delivered orders" }),
+        clickable: true,
       },
     ],
-    [onSelectFilter, stableMetrics],
+    [metrics, onSelectFilter],
   );
 
   return (
@@ -113,9 +84,7 @@ export function KpiStrip({ metrics, onSelectFilter, isLoading }: KpiStripProps) 
               <span>{card.label}</span>
               <Icon className="h-4 w-4" />
             </div>
-            <p className="text-2xl font-semibold text-slate-900">
-              {isLoading && !stableMetrics.hasData ? "—" : card.value}
-            </p>
+            <p className="text-2xl font-semibold text-slate-900">{isLoading ? "-" : card.value}</p>
             <p className="mt-1 text-xs text-slate-500">{card.helper}</p>
           </Element>
         );
@@ -123,3 +92,4 @@ export function KpiStrip({ metrics, onSelectFilter, isLoading }: KpiStripProps) 
     </section>
   );
 }
+
