@@ -19,10 +19,7 @@ const formatTime = (value: number) =>
   });
 
 function getEventTime(event: StreamEvent) {
-  if ("at" in event) return event.at;
-  if ("createdAt" in event) return event.createdAt;
-  if ("authorizedAt" in event) return event.authorizedAt;
-  return event.failedAt;
+  return event.ts;
 }
 
 export function ActivityTable({ events }: ActivityTableProps) {

@@ -33,10 +33,10 @@ import { ExceptionsPanel } from "@/components/organisms/ExceptionsPanel";
 import { KpiStrip } from "@/components/organisms/KpiStrip";
 import { OrderDrawer } from "@/components/organisms/OrderDrawer";
 import { OrdersTable } from "@/components/organisms/OrdersTable";
+import { computeKpis as computeSimpleKpis } from "@/lib/domain/orders/selectors";
 import type { OrdersFilter } from "@/lib/filters/ordersFilter";
 import { applyOrdersFilter } from "@/lib/filters/ordersFilter";
 import { computeExceptions } from "@/lib/metrics/computeExceptions";
-import { computeKpis } from "@/lib/metrics/computeKpis";
 import { KPI_THRESHOLDS } from "@/lib/metrics/thresholds";
 import { createSearchEventBus } from "@/lib/search/eventBus";
 import {
@@ -121,6 +121,7 @@ export default function HomePage() {
   const categorySales = useDashboardStore((state) => state.categorySales);
   const countrySales = useDashboardStore((state) => state.countrySales);
   const eventLog = useDashboardStore((state) => state.eventLog);
+  const ordersById = useDashboardStore((state) => state.ordersById);
   const orderEventsById = useDashboardStore((state) => state.orderEventsById);
 
   const streamRef = useRef<ReturnType<typeof createFakeSse> | null>(null);
@@ -251,12 +252,12 @@ export default function HomePage() {
     setSearchStatus(value.trim() ? "searching" : "idle");
   }, []);
 
-  const now = lastUpdatedAt ?? Date.now();
+  const now = lastUpdatedAt ?? 0;
   const filteredOrders = useMemo(
     () => applyOrdersFilter(orders, ordersFilter, now),
     [now, orders, ordersFilter],
   );
-  const kpis = useMemo(() => computeKpis(orders, eventLog, now), [eventLog, now, orders]);
+  const kpis = useMemo(() => computeSimpleKpis(ordersById), [ordersById]);
   const exceptions = useMemo(
     () => computeExceptions(orders, eventLog, now),
     [eventLog, now, orders],
@@ -305,7 +306,7 @@ export default function HomePage() {
     >
           <KpiStrip
             metrics={kpis}
-            isLoading={!kpis.hasData}
+            isLoading={orders.length === 0 && eventLog.length === 0}
             onSelectFilter={(filter) => {
               setOrdersFilter(filter);
               focusDomainSection("orders");
@@ -342,18 +343,18 @@ export default function HomePage() {
             />
             <section className="rounded-xl border border-slate-200 bg-white p-4">
               <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-800">Business pulse</h3>
-                <span className="text-xs text-slate-500">Live</span>
+                <h3 className="text-sm font-semibold text-slate-800">Executive Pulse</h3>
+                <span className="text-xs text-slate-500">Live operating health</span>
               </div>
               <div className="space-y-3 text-sm text-slate-600">
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                  Orders/min: <span className="font-semibold">{ordersPerMinute}</span>
+                  Order throughput (per min): <span className="font-semibold">{ordersPerMinute}</span>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                  Success rate: <span className="font-semibold">{(successRate * 100).toFixed(1)}%</span>
+                  Payment success rate: <span className="font-semibold">{(successRate * 100).toFixed(1)}%</span>
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                  Avg order value: <span className="font-semibold">{formatMoney(avgOrderValue)}</span>
+                  Average order value (AOV): <span className="font-semibold">{formatMoney(avgOrderValue)}</span>
                 </div>
               </div>
             </section>
@@ -596,4 +597,3 @@ export default function HomePage() {
     </DashboardShell>
   );
 }
-

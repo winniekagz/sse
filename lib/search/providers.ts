@@ -45,7 +45,7 @@ export function createActivitySearchProvider(events: StreamEvent[]): DomainSearc
       const hits: GlobalSearchHit[] = [];
 
       events.forEach((event) => {
-        const at = "at" in event ? event.at : "createdAt" in event ? event.createdAt : "authorizedAt" in event ? event.authorizedAt : event.failedAt;
+        const at = event.ts;
         const orderId = "orderId" in event ? event.orderId : "system";
         const customerId = "customerId" in event ? event.customerId : "";
         const country = "country" in event ? event.country : "";

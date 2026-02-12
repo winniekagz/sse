@@ -28,11 +28,11 @@ export function ExceptionsPanel({ items, onSelect }: ExceptionsPanelProps) {
     <section className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-semibold text-slate-800">Exceptions</h2>
-          <p className="text-xs text-slate-500">Actionable issues from live activity.</p>
+          <h2 className="text-sm font-semibold text-slate-800">Business Risk Watchlist</h2>
+          <p className="text-xs text-slate-500">Prioritized issues that may impact revenue, fulfillment, or customer trust.</p>
         </div>
         <Button variant="outline" size="sm" className="border-slate-200">
-          Review queue
+          Open priority queue
         </Button>
       </div>
 
@@ -55,7 +55,7 @@ export function ExceptionsPanel({ items, onSelect }: ExceptionsPanelProps) {
                   {item.helper && <p className="text-xs opacity-70">{item.helper}</p>}
                 </div>
               </div>
-              <span className="text-xs font-semibold uppercase tracking-wide">Review</span>
+              <span className="text-xs font-semibold uppercase tracking-wide">Investigate</span>
             </button>
           );
         })}

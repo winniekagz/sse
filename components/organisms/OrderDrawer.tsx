@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef } from "react";
 import {
   AlertTriangle,
   BadgeCheck,
-  Clock,
   CreditCard,
   Package,
   Truck,
@@ -13,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { Badge } from "@/components/atoms/Badge";
+import { OrderTimeline } from "@/components/organisms/OrderTimeline";
 import { Button } from "@/components/ui/button";
 import type { OrderEvent } from "@/lib/events";
 import type { OrderRow } from "@/lib/state/dashboardStore";
@@ -26,7 +26,9 @@ type OrderDrawerProps = {
 };
 
 const statusVariant = (status: OrderRow["status"]) => {
-  if (status === "authorized") return "success";
+  if (status === "authorized" || status === "picked" || status === "shipped" || status === "delivered") {
+    return "success";
+  }
   if (status === "failed") return "danger";
   return "warning";
 };
@@ -38,10 +40,10 @@ const formatTime = (value: number) =>
     second: "2-digit",
   });
 
-const getEventTime = (event: OrderEvent) => {
-  if (event.type === "order_created") return event.createdAt;
-  if (event.type === "payment_authorized") return event.authorizedAt;
-  return event.failedAt;
+const issueTone = (issue: OrderRow["currentIssue"]) => {
+  if (issue === "PAYMENT_FAILED") return "danger";
+  if (issue === "SHIPPING_DELAY") return "warning";
+  return "outline";
 };
 
 export function OrderDrawer({ open, order, events, onClose }: OrderDrawerProps) {
@@ -49,13 +51,15 @@ export function OrderDrawer({ open, order, events, onClose }: OrderDrawerProps) 
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const titleId = order ? `order-drawer-title-${order.orderId}` : "order-drawer-title";
 
-  const timeline = useMemo(
-    () =>
-      [...events].sort(
-        (a, b) => getEventTime(b) - getEventTime(a),
-      ),
-    [events],
-  );
+  const timeline = useMemo(() => [...events], [events]);
+  const lifecycleSteps = [
+    { id: "created", label: "Created" },
+    { id: "authorized", label: "Paid" },
+    { id: "picked", label: "Picked" },
+    { id: "shipped", label: "Shipped" },
+    { id: "delivered", label: "Delivered" },
+  ] as const;
+  const currentStepIndex = lifecycleSteps.findIndex((step) => step.id === order?.status);
 
   useEffect(() => {
     if (!open) return;
@@ -144,26 +148,38 @@ export function OrderDrawer({ open, order, events, onClose }: OrderDrawerProps) 
             </div>
           </div>
 
+          {order.currentIssue && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <p className="mb-1 text-xs text-slate-500">Current issue</p>
+              <Badge variant={issueTone(order.currentIssue)}>{order.currentIssue}</Badge>
+            </div>
+          )}
+
+          <section className="space-y-2">
+            <h3 className="text-sm font-semibold text-slate-800">State stepper</h3>
+            <div className="grid gap-2 md:grid-cols-5">
+              {lifecycleSteps.map((step, index) => {
+                const active = currentStepIndex >= 0 && index <= currentStepIndex;
+                return (
+                  <div
+                    key={step.id}
+                    className={cn(
+                      "rounded-lg border px-2 py-2 text-center text-xs",
+                      active
+                        ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                        : "border-slate-200 bg-slate-50 text-slate-500",
+                    )}
+                  >
+                    {step.label}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
           <section className="space-y-2">
             <h3 className="text-sm font-semibold text-slate-800">Event timeline</h3>
-            <div className="space-y-2">
-              {timeline.map((event) => (
-                <div key={event.id} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                  <div className="flex items-center gap-2 text-slate-700">
-                    <Clock className="h-4 w-4 text-slate-400" />
-                    {event.type.replaceAll("_", " ")}
-                  </div>
-                  <span className="text-xs text-slate-500">
-                    {formatTime(getEventTime(event))}
-                  </span>
-                </div>
-              ))}
-              {timeline.length === 0 && (
-                <div className="rounded-lg border border-dashed border-slate-200 px-3 py-4 text-sm text-slate-500">
-                  No recent events for this order.
-                </div>
-              )}
-            </div>
+            <OrderTimeline events={timeline} />
           </section>
 
           <section className="grid gap-3 md:grid-cols-3">
@@ -191,7 +207,13 @@ export function OrderDrawer({ open, order, events, onClose }: OrderDrawerProps) 
                 Shipping
               </div>
               <p className="text-sm font-medium text-slate-800">
-                {order.status === "authorized" ? "Ready to ship" : "Pending"}
+                {order.status === "delivered"
+                  ? "Delivered"
+                  : order.status === "shipped"
+                    ? "In transit"
+                    : order.status === "authorized" || order.status === "picked"
+                      ? "Ready to ship"
+                      : "Pending"}
               </p>
               <p className="text-xs text-slate-500">SLA monitored</p>
             </div>

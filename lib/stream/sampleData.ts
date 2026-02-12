@@ -7,7 +7,7 @@ function id(prefix: string, n: number) {
 export function createSeedEvents(now: number): StreamEvent[] {
   const base = now - 45_000;
 
-  return [
+  const events = [
     { id: id("sys", 1), type: "stream_connected", at: base - 2000 },
 
     {
@@ -106,4 +106,24 @@ export function createSeedEvents(now: number): StreamEvent[] {
       reason: "network_error",
     },
   ];
+
+  return events.map((event, index) => {
+    const ts =
+      "at" in event
+        ? event.at
+        : "createdAt" in event
+          ? event.createdAt
+          : "authorizedAt" in event
+            ? event.authorizedAt
+            : "failedAt" in event
+              ? event.failedAt
+              : now;
+
+    return {
+      ...event,
+      eventId: event.id,
+      ts,
+      seq: index + 1,
+    };
+  }) as StreamEvent[];
 }
