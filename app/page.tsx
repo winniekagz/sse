@@ -33,6 +33,7 @@ import { ExceptionsPanel } from "@/components/organisms/ExceptionsPanel";
 import { KpiStrip } from "@/components/organisms/KpiStrip";
 import { OrderDrawer } from "@/components/organisms/OrderDrawer";
 import { OrdersTable } from "@/components/organisms/OrdersTable";
+import { RiskReviewDrawer } from "@/components/organisms/RiskReviewDrawer";
 import { computeKpis as computeSimpleKpis } from "@/lib/domain/orders/selectors";
 import type { OrdersFilter } from "@/lib/filters/ordersFilter";
 import { applyOrdersFilter } from "@/lib/filters/ordersFilter";
@@ -105,6 +106,7 @@ export default function HomePage() {
     label: "All orders",
   });
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [riskReviewOpen, setRiskReviewOpen] = useState(false);
 
   const initialChaosModeRef = useRef(chaosMode);
   const initialEventRateRef = useRef(eventRate);
@@ -316,6 +318,7 @@ export default function HomePage() {
           <section className="mt-4 grid gap-4 xl:grid-cols-[1.2fr_1fr]">
             <ExceptionsPanel
               items={exceptions}
+              onOpenQueue={() => setRiskReviewOpen(true)}
               onSelect={(item) => {
                 if (item.kind === "payment_stuck") {
                   setOrdersFilter({
@@ -593,6 +596,37 @@ export default function HomePage() {
             order={selectedOrder}
             events={selectedOrderEvents}
             onClose={() => setSelectedOrderId(null)}
+          />
+          <RiskReviewDrawer
+            open={riskReviewOpen}
+            items={exceptions}
+            orders={orders}
+            onClose={() => setRiskReviewOpen(false)}
+            onInspectException={(item) => {
+              setRiskReviewOpen(false);
+              if (item.kind === "payment_stuck") {
+                setOrdersFilter({
+                  id: "payment_stuck",
+                  label: "Payment pending > 10 min",
+                  thresholdMs: KPI_THRESHOLDS.paymentPendingMs,
+                });
+              }
+              if (item.kind === "shipping_delayed") {
+                setOrdersFilter({
+                  id: "shipping_at_risk",
+                  label: "At-risk shipments",
+                  thresholdMs: KPI_THRESHOLDS.shippingLateMs,
+                });
+              }
+              if (item.kind === "failure_spike") {
+                setOrdersFilter({
+                  id: "failed_recent",
+                  label: "Failures last 5 min",
+                  orderIds: item.orderIds,
+                });
+              }
+              focusDomainSection("orders");
+            }}
           />
     </DashboardShell>
   );

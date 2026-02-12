@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 type ExceptionsPanelProps = {
   items: ExceptionItem[];
   onSelect: (item: ExceptionItem) => void;
+  onOpenQueue?: () => void;
 };
 
 const severityIcon = (severity: ExceptionItem["severity"]) => {
@@ -23,7 +24,7 @@ const severityStyles: Record<ExceptionItem["severity"], string> = {
   danger: "border-rose-200 bg-rose-50 text-rose-900",
 };
 
-export function ExceptionsPanel({ items, onSelect }: ExceptionsPanelProps) {
+export function ExceptionsPanel({ items, onSelect, onOpenQueue }: ExceptionsPanelProps) {
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -31,7 +32,7 @@ export function ExceptionsPanel({ items, onSelect }: ExceptionsPanelProps) {
           <h2 className="text-sm font-semibold text-slate-800">Business Risk Watchlist</h2>
           <p className="text-xs text-slate-500">Prioritized issues that may impact revenue, fulfillment, or customer trust.</p>
         </div>
-        <Button variant="outline" size="sm" className="border-slate-200">
+        <Button variant="outline" size="sm" className="border-slate-200" onClick={onOpenQueue}>
           Open priority queue
         </Button>
       </div>
