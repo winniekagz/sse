@@ -2,8 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  BadgeDollarSign,
-  Boxes,
   CreditCard,
   LayoutDashboard,
   Map,
@@ -31,7 +29,15 @@ import { DashboardSidebar } from "@/components/layout/DashboardSidebar";
 import { DashboardTopNav } from "@/components/layout/DashboardTopNav";
 import { ActivityTable } from "@/components/organisms/ActivityTable";
 import { CustomersTable } from "@/components/organisms/CustomersTable";
+import { ExceptionsPanel } from "@/components/organisms/ExceptionsPanel";
+import { KpiStrip } from "@/components/organisms/KpiStrip";
+import { OrderDrawer } from "@/components/organisms/OrderDrawer";
 import { OrdersTable } from "@/components/organisms/OrdersTable";
+import type { OrdersFilter } from "@/lib/filters/ordersFilter";
+import { applyOrdersFilter } from "@/lib/filters/ordersFilter";
+import { computeExceptions } from "@/lib/metrics/computeExceptions";
+import { computeKpis } from "@/lib/metrics/computeKpis";
+import { KPI_THRESHOLDS } from "@/lib/metrics/thresholds";
 import { createSearchEventBus } from "@/lib/search/eventBus";
 import {
   createActivitySearchProvider,
@@ -80,12 +86,6 @@ function formatMoney(value: number) {
   }).format(value);
 }
 
-function formatCompact(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
-}
 
 export default function HomePage() {
   const [chaosMode, setChaosMode] = useState(false);
@@ -100,6 +100,11 @@ export default function HomePage() {
   });
   const [activeComponentKey, setActiveComponentKey] = useState<string | null>(null);
   const [searchTriggers, setSearchTriggers] = useState<SearchTriggerEvent[]>([]);
+  const [ordersFilter, setOrdersFilter] = useState<OrdersFilter>({
+    id: "all",
+    label: "All orders",
+  });
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 
   const initialChaosModeRef = useRef(chaosMode);
   const initialEventRateRef = useRef(eventRate);
@@ -116,10 +121,10 @@ export default function HomePage() {
   const categorySales = useDashboardStore((state) => state.categorySales);
   const countrySales = useDashboardStore((state) => state.countrySales);
   const eventLog = useDashboardStore((state) => state.eventLog);
+  const orderEventsById = useDashboardStore((state) => state.orderEventsById);
 
   const streamRef = useRef<ReturnType<typeof createFakeSse> | null>(null);
   const bufferRef = useRef<ReturnType<typeof createEventBuffer> | null>(null);
-  const kpiCardsRef = useRef<HTMLElement | null>(null);
   const salesChartRef = useRef<HTMLElement | null>(null);
   const categoryMixRef = useRef<HTMLElement | null>(null);
   const countrySalesRef = useRef<HTMLElement | null>(null);
@@ -246,48 +251,23 @@ export default function HomePage() {
     setSearchStatus(value.trim() ? "searching" : "idle");
   }, []);
 
-  const totalRevenue = useMemo(
-    () => orders.reduce((sum, order) => sum + order.amount, 0),
-    [orders],
+  const now = lastUpdatedAt ?? Date.now();
+  const filteredOrders = useMemo(
+    () => applyOrdersFilter(orders, ordersFilter, now),
+    [now, orders, ordersFilter],
   );
-
-  const failedOrders = useMemo(
-    () => orders.filter((order) => order.status === "failed").length,
-    [orders],
+  const kpis = useMemo(() => computeKpis(orders, eventLog, now), [eventLog, now, orders]);
+  const exceptions = useMemo(
+    () => computeExceptions(orders, eventLog, now),
+    [eventLog, now, orders],
   );
-
-  const cards = useMemo(
-    () => [
-      {
-        label: "Total customers",
-        value: (567_000 + orders.length * 18).toLocaleString("en-US"),
-        delta: `${(successRate * 4 + 1.1).toFixed(1)}%`,
-        positive: true,
-        icon: Users,
-      },
-      {
-        label: "Total revenue",
-        value: `${formatCompact(totalRevenue + 3_000_000)} `,
-        delta: `${(successRate * 2.5).toFixed(1)}%`,
-        positive: true,
-        icon: BadgeDollarSign,
-      },
-      {
-        label: "Total orders",
-        value: formatCompact(1_000_000 + ordersPerMinute * 1300),
-        delta: `${Math.max(0.1, (1 - successRate) * 1.1).toFixed(1)}%`,
-        positive: false,
-        icon: ShoppingCart,
-      },
-      {
-        label: "Total returns",
-        value: (1700 + failedOrders).toLocaleString("en-US"),
-        delta: `${Math.max(0.1, (failedOrders / 60) * 1.4).toFixed(1)}%`,
-        positive: true,
-        icon: Boxes,
-      },
-    ],
-    [failedOrders, orders.length, ordersPerMinute, successRate, totalRevenue],
+  const selectedOrder = useMemo(
+    () => orders.find((order) => order.orderId === selectedOrderId) ?? null,
+    [orders, selectedOrderId],
+  );
+  const selectedOrderEvents = useMemo(
+    () => (selectedOrderId ? orderEventsById[selectedOrderId] ?? [] : []),
+    [orderEventsById, selectedOrderId],
   );
 
   const salesData = useMemo(() => {
@@ -323,6 +303,62 @@ export default function HomePage() {
         />
       )}
     >
+          <KpiStrip
+            metrics={kpis}
+            isLoading={!kpis.hasData}
+            onSelectFilter={(filter) => {
+              setOrdersFilter(filter);
+              focusDomainSection("orders");
+            }}
+          />
+
+          <section className="mt-4 grid gap-4 xl:grid-cols-[1.2fr_1fr]">
+            <ExceptionsPanel
+              items={exceptions}
+              onSelect={(item) => {
+                if (item.kind === "payment_stuck") {
+                  setOrdersFilter({
+                    id: "payment_stuck",
+                    label: "Payment pending > 10 min",
+                    thresholdMs: KPI_THRESHOLDS.paymentPendingMs,
+                  });
+                }
+                if (item.kind === "shipping_delayed") {
+                  setOrdersFilter({
+                    id: "shipping_at_risk",
+                    label: "At-risk shipments",
+                    thresholdMs: KPI_THRESHOLDS.shippingLateMs,
+                  });
+                }
+                if (item.kind === "failure_spike") {
+                  setOrdersFilter({
+                    id: "failed_recent",
+                    label: "Failures last 5 min",
+                    orderIds: item.orderIds,
+                  });
+                }
+                focusDomainSection("orders");
+              }}
+            />
+            <section className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-slate-800">Business pulse</h3>
+                <span className="text-xs text-slate-500">Live</span>
+              </div>
+              <div className="space-y-3 text-sm text-slate-600">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                  Orders/min: <span className="font-semibold">{ordersPerMinute}</span>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                  Success rate: <span className="font-semibold">{(successRate * 100).toFixed(1)}%</span>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                  Avg order value: <span className="font-semibold">{formatMoney(avgOrderValue)}</span>
+                </div>
+              </div>
+            </section>
+          </section>
+
           <section className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -396,39 +432,6 @@ export default function HomePage() {
                 </p>
               </div>
             </div>
-          </section>
-
-          <section
-            ref={kpiCardsRef}
-            className={`grid gap-3 rounded-xl p-1 md:grid-cols-2 xl:grid-cols-5 ${
-              activeComponentKey === "kpi_cards" ? "ring-2 ring-emerald-300" : ""
-            }`}
-          >
-            {cards.map((card) => {
-              const Icon = card.icon;
-              return (
-                <article
-                  key={card.label}
-                  className="rounded-xl border border-slate-200 bg-white p-4"
-                >
-                  <div className="mb-2 flex items-center justify-between text-xs text-slate-500">
-                    <span>{card.label}</span>
-                    <Icon className="h-4 w-4" />
-                  </div>
-                  <p className="text-2xl font-semibold text-slate-900">{card.value}</p>
-                  <p
-                    className={`mt-1 text-xs font-medium ${
-                      card.positive ? "text-emerald-600" : "text-rose-600"
-                    }`}
-                  >
-                    {card.positive ? "up" : "down"} {card.delta}
-                  </p>
-                </article>
-              );
-            })}
-            <article className="grid place-content-center rounded-xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">
-              Add data
-            </article>
           </section>
 
           <section
@@ -561,7 +564,12 @@ export default function HomePage() {
               ref={ordersTableRef}
               className={activeComponentKey === "orders_table" ? "rounded-xl ring-2 ring-emerald-300" : "rounded-xl"}
             >
-              <OrdersTable orders={orders} />
+              <OrdersTable
+                orders={filteredOrders}
+                filterLabel={ordersFilter.id === "all" ? undefined : ordersFilter.label}
+                onClearFilter={() => setOrdersFilter({ id: "all", label: "All orders" })}
+                onRowClick={(order) => setSelectedOrderId(order.orderId)}
+              />
             </article>
             <article
               ref={customersTableRef}
@@ -579,8 +587,13 @@ export default function HomePage() {
           >
             <ActivityTable events={eventLog} />
           </section>
+          <OrderDrawer
+            open={Boolean(selectedOrder)}
+            order={selectedOrder}
+            events={selectedOrderEvents}
+            onClose={() => setSelectedOrderId(null)}
+          />
     </DashboardShell>
   );
 }
-
 

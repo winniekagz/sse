@@ -1,17 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
 
-import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { useLivePaginatedTable } from "@/lib/hooks/useLivePaginatedTable";
+import { DataTable } from "@/components/organisms/DataTable";
+import { useLiveTableData } from "@/lib/hooks/useLiveTableData";
 import type { StreamEvent } from "@/lib/events";
 
 type ActivityTableProps = {
@@ -33,85 +26,49 @@ function getEventTime(event: StreamEvent) {
 }
 
 export function ActivityTable({ events }: ActivityTableProps) {
-  const [pageSize, setPageSize] = useState(10);
-  const { pageRows, page, totalPages, pendingCount, setPage, refresh } =
-    useLivePaginatedTable({
-      rows: events,
-      getId: (row) => row.id,
-      pageSize,
-    });
+  const { activeRows, pendingCount, refresh } = useLiveTableData({
+    rows: events,
+    getId: (row) => row.id,
+  });
+
+  const columns = useMemo<ColumnDef<StreamEvent, unknown>[]>(
+    () => [
+      {
+        header: "Type",
+        accessorKey: "type",
+        cell: ({ row }) => (
+          <span className="font-medium text-slate-800">{row.original.type}</span>
+        ),
+      },
+      {
+        header: "Order",
+        cell: ({ row }) => ("orderId" in row.original ? row.original.orderId : "-"),
+      },
+      {
+        header: "Customer",
+        cell: ({ row }) =>
+          "customerId" in row.original ? row.original.customerId : "-",
+      },
+      {
+        header: "Country",
+        cell: ({ row }) => ("country" in row.original ? row.original.country : "-"),
+      },
+      {
+        header: "Time",
+        cell: ({ row }) => formatTime(getEventTime(row.original)),
+      },
+    ],
+    [],
+  );
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white">
-      <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-        <h2 className="text-sm font-semibold text-slate-800">Activity</h2>
-        <label className="flex items-center gap-2 text-xs text-slate-500">
-          Rows
-          <select
-            value={pageSize}
-            onChange={(event) => {
-              setPageSize(Number(event.target.value));
-              setPage(1);
-            }}
-            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
-          >
-            <option value={10}>10</option>
-            <option value={25}>25</option>
-            <option value={50}>50</option>
-          </select>
-        </label>
-      </div>
-      {pendingCount > 0 && (
-        <div className="flex items-center justify-between border-b border-emerald-100 bg-emerald-50 px-4 py-2 text-xs text-emerald-800">
-          <span>Live updates paused. {pendingCount} new rows - Refresh</span>
-          <Button size="sm" onClick={refresh}>
-            Refresh
-          </Button>
-        </div>
-      )}
-      <Table>
-        <TableHeader>
-          <TableRow className="bg-slate-50">
-            <TableHead>Type</TableHead>
-            <TableHead>Order</TableHead>
-            <TableHead>Customer</TableHead>
-            <TableHead>Country</TableHead>
-            <TableHead>Time</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {pageRows.map((event) => (
-            <TableRow key={event.id}>
-              <TableCell className="font-medium text-slate-800">{event.type}</TableCell>
-              <TableCell>{"orderId" in event ? event.orderId : "-"}</TableCell>
-              <TableCell>{"customerId" in event ? event.customerId : "-"}</TableCell>
-              <TableCell>{"country" in event ? event.country : "-"}</TableCell>
-              <TableCell>{formatTime(getEventTime(event))}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-      <div className="flex items-center justify-between border-t border-slate-100 px-4 py-2 text-xs text-slate-600">
-        <span>Page {page} of {totalPages}</span>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPage((current) => Math.max(1, current - 1))}
-            disabled={page <= 1}
-          >
-            Prev
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-            disabled={page >= totalPages}
-          >
-            Next
-          </Button>
-        </div>
-      </div>
-    </div>
+    <DataTable
+      title="Activity"
+      data={activeRows}
+      columns={columns}
+      getRowId={(row) => row.id}
+      pendingCount={pendingCount}
+      onRefresh={refresh}
+    />
   );
 }
