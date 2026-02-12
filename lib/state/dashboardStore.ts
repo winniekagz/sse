@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import type { StreamEvent, SystemEvent } from "@/lib/events";
+import type { StreamEvent, SystemEvent, OrderEvent } from "@/lib/events";
 import { createSeedEvents } from "@/lib/stream/sampleData";
 
 export type ConnectionStatus =
@@ -73,6 +73,7 @@ export type DashboardState = {
   createdWindow: CreatedMetric[];
   outcomeWindow: OutcomeMetric[];
   processedEventIds: string[];
+  orderEventsById: Record<string, OrderEvent[]>;
 };
 
 type DashboardStore = DashboardState & {
@@ -222,6 +223,7 @@ const emptyDashboardState: DashboardState = {
   createdWindow: [],
   outcomeWindow: [],
   processedEventIds: [],
+  orderEventsById: {},
 };
 
 const reduceEventBatch = (
@@ -236,6 +238,7 @@ const reduceEventBatch = (
   let createdWindow = [...state.createdWindow];
   let outcomeWindow = [...state.outcomeWindow];
   let processedEventIds = [...state.processedEventIds];
+  let orderEventsById = { ...state.orderEventsById };
   const processedSet = new Set(processedEventIds);
 
   events.forEach((event) => {
@@ -254,6 +257,12 @@ const reduceEventBatch = (
     ) {
       connection = updateConnection(connection, event);
       return;
+    }
+
+    if ("orderId" in event) {
+      const existing = orderEventsById[event.orderId] ?? [];
+      const next = [event as OrderEvent, ...existing].slice(0, 16);
+      orderEventsById = { ...orderEventsById, [event.orderId]: next };
     }
 
     if (event.type === "order_created") {
@@ -362,6 +371,7 @@ const reduceEventBatch = (
     createdWindow,
     outcomeWindow,
     processedEventIds,
+    orderEventsById,
     lineSeries: buildLineSeries(now, createdWindow),
     outcomeSeries: buildOutcomeSeries(outcomeWindow),
   };
